@@ -569,7 +569,8 @@ class WiggleCopy(bpy.types.Operator):
     """Copy active wiggle settings to selected bones"""
     bl_idname = "wiggle.copy"
     bl_label = "Copy Settings to Selected"
-    
+    bl_options = {'REGISTER', 'UNDO'}
+
     @classmethod
     def poll(cls,context):
         return context.mode in ['POSE'] and context.active_pose_bone and (len(context.selected_pose_bones)>1)
@@ -620,7 +621,8 @@ class WiggleReset(bpy.types.Operator):
     """Reset scene wiggle physics to rest state"""
     bl_idname = "wiggle.reset"
     bl_label = "Reset Physics"
-    
+    bl_options = {'REGISTER', 'UNDO'}
+
     @classmethod
     def poll(cls,context):
         return context.scene.wiggle_enable and context.mode in ['OBJECT', 'POSE']
@@ -649,6 +651,7 @@ class WiggleSelect(bpy.types.Operator):
     """Select wiggle bones on selected objects in pose mode"""
     bl_idname = "wiggle.select"
     bl_label = "Select Enabled"
+    bl_options = {'REGISTER', 'UNDO'}
     
     @classmethod
     def poll(cls,context):
