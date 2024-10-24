@@ -20,7 +20,11 @@ bl_info = {
 
 import bpy, math
 from mathutils import Vector, Matrix, Euler, Quaternion, geometry
+from bpy.types import Panel, Operator, Menu
+from bpy.props import StringProperty, EnumProperty, BoolProperty, IntProperty, FloatProperty, FloatVectorProperty, PointerProperty, CollectionProperty
 from bpy.app.handlers import persistent
+from bl_operators.presets import AddPresetBase
+from bl_ui.utils import PresetPanel
 
 #return m2 in m1 space
 def relative_matrix(m1,m2):
@@ -671,7 +675,8 @@ class WiggleBake(bpy.types.Operator):
     """Bake this object's visible wiggle bones to keyframes"""
     bl_idname = "wiggle.bake"
     bl_label = "Bake Wiggle"
-    
+    bl_options = {'REGISTER', 'UNDO'}
+
     @classmethod
     def poll(cls,context):
         return context.object
@@ -705,22 +710,15 @@ class WiggleBake(bpy.types.Operator):
                 context.scene.frame_set(context.scene.frame_start)
             context.scene.wiggle.is_preroll = True
             preroll -= 1
+        
+        # actionName = context.object.animation_data.action.name + '_BAKE'
         #bake
-        if bpy.app.version[0] >= 4 and bpy.app.version[1] > 0:
-            bpy.ops.nla.bake(frame_start = context.scene.frame_start,
-                            frame_end = context.scene.frame_end,
-                            only_selected = True,
-                            visual_keying = True,
-                            use_current_action = context.scene.wiggle.bake_overwrite,
-                            bake_types={'POSE'},
-                            channel_types={'LOCATION','ROTATION','SCALE'})
-        else:
-            bpy.ops.nla.bake(frame_start = context.scene.frame_start,
-                            frame_end = context.scene.frame_end,
-                            only_selected = True,
-                            visual_keying = True,
-                            use_current_action = context.scene.wiggle.bake_overwrite,
-                            bake_types={'POSE'})
+        bpy.ops.nla.bake(frame_start = context.scene.frame_start,
+                        frame_end = context.scene.frame_end,
+                        only_selected = True,
+                        visual_keying = True,
+                        use_current_action = context.scene.wiggle.bake_overwrite,
+                        bake_types={'POSE'})
         context.scene.wiggle.is_preroll = False
         context.object.wiggle_freeze = True
         if not context.scene.wiggle.bake_overwrite:
@@ -736,9 +734,12 @@ class WigglePanel:
     def poll(cls,context):
         return context.object  
 
-class WIGGLE_PT_Settings(WigglePanel, bpy.types.Panel):
+class WIGGLE_PT_Settings(WigglePanel, Panel):
     bl_label = 'Wiggle 2'
-        
+    
+    def draw_header_preset(self, _context):
+        WB_PT_WiggleBonePresets.draw_panel_header(self.layout)
+
     def draw(self,context):
         row = self.layout.row()
         icon = 'HIDE_ON' if not context.scene.wiggle_enable else 'SCENE_DATA'
@@ -768,8 +769,11 @@ class WIGGLE_PT_Settings(WigglePanel, bpy.types.Panel):
         if context.active_pose_bone.wiggle_mute:
             row.label(text='Bone muted.')
             return
+        
+        reset_all = row.operator("wb.reset_to_default", icon = 'LOOP_BACK', text='', emboss=False)
+        reset_all.reset_type = 'ALL'
 
-class WIGGLE_PT_Head(WigglePanel,bpy.types.Panel):
+class WIGGLE_PT_Head(WigglePanel,Panel):
     bl_label = ''
     bl_parent_id = 'WIGGLE_PT_Settings'
     bl_options = {'HEADER_LAYOUT_EXPAND'}
@@ -782,7 +786,9 @@ class WIGGLE_PT_Head(WigglePanel,bpy.types.Panel):
     def draw_header(self,context):
         row=self.layout.row(align=True)
         row.prop(context.active_pose_bone, 'wiggle_head')
-    
+        reset_all = row.operator("wb.reset_to_default", icon = 'LOOP_BACK', text='',emboss=False)
+        reset_all.reset_type = 'HEAD'
+
     def draw(self,context):
         b = context.active_pose_bone
         if not b.wiggle_head: return
@@ -829,7 +835,7 @@ class WIGGLE_PT_Head(WigglePanel,bpy.types.Panel):
             drawprops(col,b,['wiggle_radius_head','wiggle_friction_head','wiggle_bounce_head','wiggle_sticky_head'])
         layout.prop(b,'wiggle_chain_head')
             
-class WIGGLE_PT_Tail(WigglePanel,bpy.types.Panel):
+class WIGGLE_PT_Tail(WigglePanel,Panel):
     bl_label = ''
     bl_parent_id = 'WIGGLE_PT_Settings'
     bl_options = {'HEADER_LAYOUT_EXPAND'}
@@ -842,7 +848,9 @@ class WIGGLE_PT_Tail(WigglePanel,bpy.types.Panel):
     def draw_header(self,context):
         row=self.layout.row(align=True)
         row.prop(context.active_pose_bone, 'wiggle_tail')
-        
+        reset_all = row.operator("wb.reset_to_default", icon = 'LOOP_BACK', text='',emboss=False)
+        reset_all.reset_type = 'TAIL'
+
     def draw(self,context):
         b = context.active_pose_bone
         if not b.wiggle_tail: return
@@ -888,7 +896,7 @@ class WIGGLE_PT_Tail(WigglePanel,bpy.types.Panel):
             drawprops(col,b,['wiggle_radius','wiggle_friction','wiggle_bounce','wiggle_sticky'])
         layout.prop(b,'wiggle_chain')
 
-class WIGGLE_PT_Utilities(WigglePanel,bpy.types.Panel):
+class WIGGLE_PT_Utilities(WigglePanel,Panel):
     bl_label = 'Global Wiggle Utilities'
     bl_parent_id = 'WIGGLE_PT_Settings'
     bl_options = {"DEFAULT_CLOSED"}
@@ -909,7 +917,7 @@ class WIGGLE_PT_Utilities(WigglePanel,bpy.types.Panel):
         layout.prop(context.scene.wiggle, 'loop')
         layout.prop(context.scene.wiggle, 'iterations')
         
-class WIGGLE_PT_Bake(WigglePanel,bpy.types.Panel):
+class WIGGLE_PT_Bake(WigglePanel,Panel):
     bl_label = 'Bake Wiggle'
     bl_parent_id = 'WIGGLE_PT_Utilities'
     bl_options = {"DEFAULT_CLOSED"}
@@ -930,60 +938,182 @@ class WIGGLE_PT_Bake(WigglePanel,bpy.types.Panel):
         layout.operator('wiggle.bake')
         
 class WiggleBoneItem(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty(override={'LIBRARY_OVERRIDABLE'})
+    name: StringProperty(override={'LIBRARY_OVERRIDABLE'})
     
 class WiggleItem(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty(override={'LIBRARY_OVERRIDABLE'})  
-    list: bpy.props.CollectionProperty(type=WiggleBoneItem, override={'LIBRARY_OVERRIDABLE','USE_INSERTION'})    
+    name: StringProperty(override={'LIBRARY_OVERRIDABLE'})  
+    list: CollectionProperty(type=WiggleBoneItem, override={'LIBRARY_OVERRIDABLE','USE_INSERTION'})    
 
 #store properties for a bone. custom properties for user editable. property group for internal calculations
 class WiggleBone(bpy.types.PropertyGroup):
-    matrix: bpy.props.FloatVectorProperty(name = 'Matrix', size=16, subtype = 'MATRIX', override={'LIBRARY_OVERRIDABLE'})
-    position: bpy.props.FloatVectorProperty(subtype='TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
-    position_last: bpy.props.FloatVectorProperty(subtype='TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
-    velocity: bpy.props.FloatVectorProperty(subtype='VELOCITY', override={'LIBRARY_OVERRIDABLE'})
+    matrix: FloatVectorProperty(name = 'Matrix', size=16, subtype = 'MATRIX', override={'LIBRARY_OVERRIDABLE'})
+    position: FloatVectorProperty(subtype='TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
+    position_last: FloatVectorProperty(subtype='TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
+    velocity: FloatVectorProperty(subtype='VELOCITY', override={'LIBRARY_OVERRIDABLE'})
     
-    collision_point:bpy.props.FloatVectorProperty(subtype = 'TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
-    collision_ob: bpy.props.PointerProperty(type=bpy.types.Object, override={'LIBRARY_OVERRIDABLE'})
-    collision_normal: bpy.props.FloatVectorProperty(subtype = 'TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
-    collision_col: bpy.props.PointerProperty(type=bpy.types.Collection,override={'LIBRARY_OVERRIDABLE'})
+    collision_point:FloatVectorProperty(subtype = 'TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
+    collision_ob: PointerProperty(type=bpy.types.Object, override={'LIBRARY_OVERRIDABLE'})
+    collision_normal: FloatVectorProperty(subtype = 'TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
+    collision_col: PointerProperty(type=bpy.types.Collection,override={'LIBRARY_OVERRIDABLE'})
     
-    position_head: bpy.props.FloatVectorProperty(subtype='TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
-    position_last_head: bpy.props.FloatVectorProperty(subtype='TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
-    velocity_head: bpy.props.FloatVectorProperty(subtype='VELOCITY', override={'LIBRARY_OVERRIDABLE'})
+    position_head: FloatVectorProperty(subtype='TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
+    position_last_head: FloatVectorProperty(subtype='TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
+    velocity_head: FloatVectorProperty(subtype='VELOCITY', override={'LIBRARY_OVERRIDABLE'})
     
-    collision_point_head:bpy.props.FloatVectorProperty(subtype = 'TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
-    collision_ob_head: bpy.props.PointerProperty(type=bpy.types.Object, override={'LIBRARY_OVERRIDABLE'})
-    collision_normal_head: bpy.props.FloatVectorProperty(subtype = 'TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
+    collision_point_head:FloatVectorProperty(subtype = 'TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
+    collision_ob_head: PointerProperty(type=bpy.types.Object, override={'LIBRARY_OVERRIDABLE'})
+    collision_normal_head: FloatVectorProperty(subtype = 'TRANSLATION', override={'LIBRARY_OVERRIDABLE'})
     
 class WiggleObject(bpy.types.PropertyGroup):
-    list: bpy.props.CollectionProperty(type=WiggleItem, override={'LIBRARY_OVERRIDABLE'})
+    list: CollectionProperty(type=WiggleItem, override={'LIBRARY_OVERRIDABLE'})
     
 class WiggleScene(bpy.types.PropertyGroup):
-    dt: bpy.props.FloatProperty()
-    lastframe: bpy.props.IntProperty()
-    iterations: bpy.props.IntProperty(name='Quality', description='Constraint solver interations for chain physics', min=1, default=2, soft_max=10, max=100)
-    loop: bpy.props.BoolProperty(name='Loop Physics', description='Physics continues as timeline loops', default=True)
-    list: bpy.props.CollectionProperty(type=WiggleItem, override={'LIBRARY_OVERRIDABLE','USE_INSERTION'})
-    preroll: bpy.props.IntProperty(name = 'Preroll', description='Frames to run simulation before bake', min=0, default=0)
-    is_preroll: bpy.props.BoolProperty(default=False)
-    bake_overwrite: bpy.props.BoolProperty(name='Overwrite Current Action', description='Bake wiggle into current action, instead of creating a new one', default = False)
-    bake_nla: bpy.props.BoolProperty(name='Current Action to NLA', description='Move existing animation on the armature into an NLA strip', default = False) 
-    is_rendering: bpy.props.BoolProperty(default=False)
-    reset: bpy.props.BoolProperty(default=False)
+    dt: FloatProperty()
+    lastframe: IntProperty()
+    iterations: IntProperty(name='Quality', description='Constraint solver interations for chain physics', min=1, default=2, soft_max=10, max=100)
+    loop: BoolProperty(name='Loop Physics', description='Physics continues as timeline loops', default=True)
+    list: CollectionProperty(type=WiggleItem, override={'LIBRARY_OVERRIDABLE','USE_INSERTION'})
+    preroll: IntProperty(name = 'Preroll', description='Frames to run simulation before bake', min=0, default=0)
+    is_preroll: BoolProperty(default=False)
+    bake_overwrite: BoolProperty(name='Overwrite Current Action', description='Bake wiggle into current action, instead of creating a new one', default = False)
+    bake_nla: BoolProperty(name='Current Action to NLA', description='Move existing animation on the armature into an NLA strip', default = False) 
+    is_rendering: BoolProperty(default=False)
+    reset: BoolProperty(default=False)
+
+#### RESET SETTINGS ############# 
+# Reset to default settings
+def reset_default_settings(reset_type):
+    scn = bpy.context.scene
+    context = bpy.context
+    arm = context.active_object
+    pbones = arm.pose.bones
+    
+    bpy.ops.wiggle.reset()
+
+    for b in context.selected_pose_bones:
+    # print('b %s  name %s' % (b, b.name))
+        # head Bone
+        if reset_type == 'ALL' or reset_type == 'HEAD':
+            b.wiggle_head = False
+            b.wiggle_mass_head = 1
+            b.wiggle_stiff_head = 400.0
+            b.wiggle_stretch_head = 0.0
+            b.wiggle_damp_head = 1.0
+
+            b.wiggle_wind_ob_head = None
+            b.wiggle_wind_head = 1.0
+
+            b.wiggle_collider_type_head = 'Object'
+            b.wiggle_collider_head = None
+            b.wiggle_chain_head = True
+        # Tail Bone
+        if reset_type == 'ALL' or reset_type == 'TAIL':
+            b.wiggle_tail = False
+            b.wiggle_mass = 1
+            b.wiggle_stiff = 400.0
+            b.wiggle_stretch = 0.0
+            b.wiggle_damp = 1.0
+
+            b.wiggle_wind_ob = None
+            b.wiggle_wind = 1.0
+    
+            b.wiggle_collider_type = 'Object'
+            b.wiggle_collider = None
+            b.wiggle_chain = True
+
+    # Global Settings display
+    if reset_type == 'ALL':
+        bpy.ops.wiggle.reset()
+        bpy.data.scenes["Scene"].wiggle.loop = True
+        bpy.data.scenes["Scene"].wiggle.iterations = 2
+    
+    
+
+# Reset to default settings
+class WB_OT_ResetToDefault(Operator):
+    bl_idname = "wb.reset_to_default"
+    bl_label = "Reset"
+    bl_description = "Reset to Default Values"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    reset_type : StringProperty(default = 'ALL')
+    
+    @classmethod
+    def poll(cls, context):
+    # check if any bone or bones are selected
+        return context.selected_pose_bones
+
+    def execute(self, context):
+        # lambda s, c: update_prop(s, c, 'wiggle_head')
+        reset_default_settings(self.reset_type)
+        return {'FINISHED'}
+
+
+#### SAVE PRESETS ############# 
+
+class WB_PT_WiggleBonePresets(PresetPanel, Panel):
+    bl_label = "Wiggle Bone Presets"
+    preset_subdir = "wigglebones"
+    preset_operator = "script.execute_preset"
+    preset_add_operator = "wb.add_wigglebone_preset"
+
+class WB_MT_WiggleBonePresets(Menu):
+    bl_label = 'Wiggle Bone Presets'
+    preset_subdir = 'wigglebones'
+    preset_operator = 'script.execute_preset'
+    draw = Menu.draw_preset
+
+class WB_OT_AddWiggleBonePreset(AddPresetBase, Operator):
+    bl_idname = 'wb.add_wigglebone_preset'
+    bl_label = 'Save Wiggle Bone preset'
+    preset_menu = 'WB_MT_WiggleBonePresets'
+    bl_options = {'UNDO', 'REGISTER'}
+
+    # Common variable used for all preset values
+    preset_defines = [
+        'b = bpy.context.active_pose_bone',
+    ]
+
+    preset_values = [
+        # Tail Bone
+        'b.wiggle_head',
+        'b.wiggle_mass_head',
+        'b.wiggle_stiff_head',
+        'b.wiggle_stretch_head',
+        'b.wiggle_damp_head',
+        'b.wiggle_wind_ob_head',
+        'b.wiggle_wind_head',
+        'b.wiggle_collider_type_head',
+        'b.wiggle_collider_head',
+        'b.wiggle_chain_head',
+        # Tail Bone
+        'b.wiggle_tail',
+        'b.wiggle_mass',
+        'b.wiggle_stiff',
+        'b.wiggle_stretch',
+        'b.wiggle_damp',
+        'b.wiggle_wind_ob',
+        'b.wiggle_wind',
+        'b.wiggle_collider_type',
+        'b.wiggle_collider',
+        'b.wiggle_chain',
+    ]
+
+    # Directory to store the presets
+    preset_subdir = 'wigglebones'
 
 def register():
     
     #WIGGLE TOGGLES
     
-    bpy.types.Scene.wiggle_enable = bpy.props.BoolProperty(
+    bpy.types.Scene.wiggle_enable = BoolProperty(
         name = 'Enable Scene',
         description = 'Enable wiggle on this scene',
         default = False,
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_enable')
     )
-    bpy.types.Object.wiggle_enable = bpy.props.BoolProperty(
+    bpy.types.Object.wiggle_enable = BoolProperty(
         name = 'Enable Armature',
         description = 'Enable wiggle on this armature',
         default = False,
@@ -991,20 +1121,20 @@ def register():
         override={'LIBRARY_OVERRIDABLE'}
 #        update=lambda s, c: update_prop(s, c, 'wiggle_enable')
     )
-    bpy.types.Object.wiggle_mute = bpy.props.BoolProperty(
+    bpy.types.Object.wiggle_mute = BoolProperty(
         name = 'Mute Armature',
         description = 'Mute wiggle on this armature.',
         default = False,
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_mute')
     )
-    bpy.types.Object.wiggle_freeze = bpy.props.BoolProperty(
+    bpy.types.Object.wiggle_freeze = BoolProperty(
         name = 'Freeze Wiggle',
         description = 'Wiggle Calculation frozen after baking',
         default = False,
         override={'LIBRARY_OVERRIDABLE'}
     )
-    bpy.types.PoseBone.wiggle_enable = bpy.props.BoolProperty(
+    bpy.types.PoseBone.wiggle_enable = BoolProperty(
         name = 'Enable Bone',
         description = "Enable wiggle on this bone",
         default = False,
@@ -1012,14 +1142,14 @@ def register():
         override={'LIBRARY_OVERRIDABLE'}
 #        update=lambda s, c: update_prop(s, c, 'wiggle_enable')
     )
-    bpy.types.PoseBone.wiggle_mute = bpy.props.BoolProperty(
+    bpy.types.PoseBone.wiggle_mute = BoolProperty(
         name = 'Mute Bone',
         description = "Mute wiggle for this bone.",
         default = False,
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_mute')
     )
-    bpy.types.PoseBone.wiggle_head = bpy.props.BoolProperty(
+    bpy.types.PoseBone.wiggle_head = BoolProperty(
         name = 'Bone Head',
         description = "Enable wiggle on this bone's head",
         default = False,
@@ -1027,7 +1157,7 @@ def register():
         options={'HIDDEN'},
         update=lambda s, c: update_prop(s, c, 'wiggle_head')
     )
-    bpy.types.PoseBone.wiggle_tail = bpy.props.BoolProperty(
+    bpy.types.PoseBone.wiggle_tail = BoolProperty(
         name = 'Bone Tail',
         description = "Enable wiggle on this bone's tail",
         default = False,
@@ -1036,14 +1166,14 @@ def register():
         update=lambda s, c: update_prop(s, c, 'wiggle_tail')
     )
     
-    bpy.types.PoseBone.wiggle_head_mute = bpy.props.BoolProperty(
+    bpy.types.PoseBone.wiggle_head_mute = BoolProperty(
         name = 'Bone Head Mute',
         description = "Mute wiggle on this bone's head",
         default = False,
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_head_mute')
     )
-    bpy.types.PoseBone.wiggle_tail_mute = bpy.props.BoolProperty(
+    bpy.types.PoseBone.wiggle_tail_mute = BoolProperty(
         name = 'Bone Tail Mute',
         description = "Mute wiggle on this bone's tail",
         default = False,
@@ -1053,7 +1183,7 @@ def register():
     
     #TAIL PROPS
     
-    bpy.types.PoseBone.wiggle_mass = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_mass = FloatProperty(
         name = 'Mass',
         description = 'Mass of bone',
         min = 0.01,
@@ -1061,7 +1191,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_mass')
     )
-    bpy.types.PoseBone.wiggle_stiff = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_stiff = FloatProperty(
         name = 'Stiff',
         description = 'Spring stiffness coefficient, can be large numbers',
         min = 0,
@@ -1069,7 +1199,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_stiff')
     )
-    bpy.types.PoseBone.wiggle_stretch = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_stretch = FloatProperty(
         name = 'Stretch',
         description = 'Bone stretchiness factor, 0 to 1 range',
         min = 0,
@@ -1078,7 +1208,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_stretch')
     )
-    bpy.types.PoseBone.wiggle_damp = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_damp = FloatProperty(
         name = 'Damp',
         description = 'Dampening coefficient, can be greater than 1',
         min = 0,
@@ -1086,14 +1216,14 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_damp')
     )
-    bpy.types.PoseBone.wiggle_gravity = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_gravity = FloatProperty(
         name = 'Gravity',
         description = 'Multiplier for scene gravity',
         default = 1,
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_gravity')
     )
-    bpy.types.PoseBone.wiggle_wind_ob = bpy.props.PointerProperty(
+    bpy.types.PoseBone.wiggle_wind_ob = PointerProperty(
         name='Wind', 
         description='Wind force field object', 
         type=bpy.types.Object, 
@@ -1101,14 +1231,14 @@ def register():
         override={'LIBRARY_OVERRIDABLE'}, 
         update=lambda s, c: update_prop(s, c, 'wiggle_wind_ob')
     )
-    bpy.types.PoseBone.wiggle_wind = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_wind = FloatProperty(
         name = 'Wind Multiplier',
         description = 'Multiplier for wind forces',
         default = 1,
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_wind')
     )
-    bpy.types.PoseBone.wiggle_chain = bpy.props.BoolProperty(
+    bpy.types.PoseBone.wiggle_chain = BoolProperty(
         name = 'Chain',
         description = 'Bone affects its parent creating a physics chain',
         default = True,
@@ -1118,7 +1248,7 @@ def register():
     
     #HEAD PROPS
     
-    bpy.types.PoseBone.wiggle_mass_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_mass_head = FloatProperty(
         name = 'Mass',
         description = 'Mass of bone',
         min = 0.01,
@@ -1126,7 +1256,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_mass_head')
     )
-    bpy.types.PoseBone.wiggle_stiff_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_stiff_head = FloatProperty(
         name = 'Stiff',
         description = 'Spring stiffness coefficient, can be large numbers',
         min = 0,
@@ -1134,7 +1264,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_stiff_head')
     )
-    bpy.types.PoseBone.wiggle_stretch_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_stretch_head = FloatProperty(
         name = 'Stretch',
         description = 'Bone stretchiness factor, 0 to 1 range',
         min = 0,
@@ -1143,7 +1273,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_stretch_head')
     )
-    bpy.types.PoseBone.wiggle_damp_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_damp_head = FloatProperty(
         name = 'Damp',
         description = 'Dampening coefficient, can be greater than 1',
         min = 0,
@@ -1151,14 +1281,14 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_damp_head')
     )
-    bpy.types.PoseBone.wiggle_gravity_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_gravity_head = FloatProperty(
         name = 'Gravity',
         description = 'Multiplier for scene gravity',
         default = 1,
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_gravity_head')
     )
-    bpy.types.PoseBone.wiggle_wind_ob_head = bpy.props.PointerProperty(
+    bpy.types.PoseBone.wiggle_wind_ob_head = PointerProperty(
         name='Wind', 
         description='Wind force field object', 
         type=bpy.types.Object, 
@@ -1166,14 +1296,14 @@ def register():
         override={'LIBRARY_OVERRIDABLE'}, 
         update=lambda s, c: update_prop(s, c, 'wiggle_wind_ob_head')
     )
-    bpy.types.PoseBone.wiggle_wind_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_wind_head = FloatProperty(
         name = 'Wind',
         description = 'Multiplier for wind forces',
         default = 1,
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_wind_head')
     )
-    bpy.types.PoseBone.wiggle_chain_head = bpy.props.BoolProperty(
+    bpy.types.PoseBone.wiggle_chain_head = BoolProperty(
         name = 'Chain',
         description = 'Bone affects its parent creating a physics chain',
         default = True,
@@ -1183,13 +1313,13 @@ def register():
     
     #TAIL COLLISION
     
-    bpy.types.PoseBone.wiggle_collider_type = bpy.props.EnumProperty(
+    bpy.types.PoseBone.wiggle_collider_type = EnumProperty(
         name='Collider Type',
         items=[('Object','Object','Collide with a selected mesh'),('Collection','Collection','Collide with all meshes in selected collection')],
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_collider_type')
     )
-    bpy.types.PoseBone.wiggle_collider = bpy.props.PointerProperty(
+    bpy.types.PoseBone.wiggle_collider = PointerProperty(
         name='Collider Object', 
         description='Mesh object to collide with', 
         type=bpy.types.Object, 
@@ -1197,7 +1327,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'}, 
         update=lambda s, c: update_prop(s, c, 'wiggle_collider')
     )
-    bpy.types.PoseBone.wiggle_collider_collection = bpy.props.PointerProperty(
+    bpy.types.PoseBone.wiggle_collider_collection = PointerProperty(
         name = 'Collider Collection', 
         description='Collection to collide with', 
         type=bpy.types.Collection, 
@@ -1205,7 +1335,7 @@ def register():
         update=lambda s, c: update_prop(s, c, 'wiggle_collider_collection')
     )
     
-    bpy.types.PoseBone.wiggle_radius = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_radius = FloatProperty(
         name = 'Radius',
         description = 'Collision radius',
         min = 0,
@@ -1213,7 +1343,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_radius')
     )
-    bpy.types.PoseBone.wiggle_friction = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_friction = FloatProperty(
         name = 'Friction',
         description = 'Friction when colliding',
         min = 0,
@@ -1222,7 +1352,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_friction')
     )
-    bpy.types.PoseBone.wiggle_bounce = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_bounce = FloatProperty(
         name = 'Bounce',
         description = 'Bounciness when colliding',
         min = 0,
@@ -1231,7 +1361,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_bounce')
     )
-    bpy.types.PoseBone.wiggle_sticky = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_sticky = FloatProperty(
         name = 'Sticky',
         description = 'Margin beyond radius to keep item stuck to surface',
         min = 0,
@@ -1243,13 +1373,13 @@ def register():
     
     #HEAD COLLISION
     
-    bpy.types.PoseBone.wiggle_collider_type_head = bpy.props.EnumProperty(
+    bpy.types.PoseBone.wiggle_collider_type_head = EnumProperty(
         name='Collider Type',
         items=[('Object','Object','Collide with a selected mesh'),('Collection','Collection','Collide with all meshes in selected collection')],
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_collider_type_head')
     )
-    bpy.types.PoseBone.wiggle_collider_head = bpy.props.PointerProperty(
+    bpy.types.PoseBone.wiggle_collider_head = PointerProperty(
         name='Collider Object', 
         description='Mesh object to collide with', 
         type=bpy.types.Object, 
@@ -1257,7 +1387,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'}, 
         update=lambda s, c: update_prop(s, c, 'wiggle_collider_head')
     )
-    bpy.types.PoseBone.wiggle_collider_collection_head = bpy.props.PointerProperty(
+    bpy.types.PoseBone.wiggle_collider_collection_head = PointerProperty(
         name = 'Collider Collection', 
         description='Collection to collide with', 
         type=bpy.types.Collection, 
@@ -1265,7 +1395,7 @@ def register():
         update=lambda s, c: update_prop(s, c, 'wiggle_collider_collection_head')
     )
     
-    bpy.types.PoseBone.wiggle_radius_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_radius_head = FloatProperty(
         name = 'Radius',
         description = 'Collision radius',
         min = 0,
@@ -1273,7 +1403,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_radius_head')
     )
-    bpy.types.PoseBone.wiggle_friction_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_friction_head = FloatProperty(
         name = 'Friction',
         description = 'Friction when colliding',
         min = 0,
@@ -1282,7 +1412,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_friction_head')
     )
-    bpy.types.PoseBone.wiggle_bounce_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_bounce_head = FloatProperty(
         name = 'Bounce',
         description = 'Bounciness when colliding',
         min = 0,
@@ -1291,7 +1421,7 @@ def register():
         override={'LIBRARY_OVERRIDABLE'},
         update=lambda s, c: update_prop(s, c, 'wiggle_bounce_head')
     )
-    bpy.types.PoseBone.wiggle_sticky_head = bpy.props.FloatProperty(
+    bpy.types.PoseBone.wiggle_sticky_head = FloatProperty(
         name = 'Sticky',
         description = 'Margin beyond radius to keep item stuck to surface',
         min = 0,
@@ -1305,11 +1435,11 @@ def register():
     bpy.utils.register_class(WiggleBoneItem)
     bpy.utils.register_class(WiggleItem)
     bpy.utils.register_class(WiggleBone)
-    bpy.types.PoseBone.wiggle = bpy.props.PointerProperty(type=WiggleBone, override={'LIBRARY_OVERRIDABLE'})
+    bpy.types.PoseBone.wiggle = PointerProperty(type=WiggleBone, override={'LIBRARY_OVERRIDABLE'})
     bpy.utils.register_class(WiggleObject)
-    bpy.types.Object.wiggle = bpy.props.PointerProperty(type=WiggleObject, override={'LIBRARY_OVERRIDABLE'})
+    bpy.types.Object.wiggle = PointerProperty(type=WiggleObject, override={'LIBRARY_OVERRIDABLE'})
     bpy.utils.register_class(WiggleScene)
-    bpy.types.Scene.wiggle = bpy.props.PointerProperty(type=WiggleScene, override={'LIBRARY_OVERRIDABLE'})
+    bpy.types.Scene.wiggle = PointerProperty(type=WiggleScene, override={'LIBRARY_OVERRIDABLE'})
     
     bpy.utils.register_class(WiggleReset)
     bpy.utils.register_class(WiggleCopy)
@@ -1320,6 +1450,12 @@ def register():
     bpy.utils.register_class(WIGGLE_PT_Tail)
     bpy.utils.register_class(WIGGLE_PT_Utilities)
     bpy.utils.register_class(WIGGLE_PT_Bake)
+
+    bpy.utils.register_class(WB_OT_ResetToDefault)
+    
+    bpy.utils.register_class(WB_PT_WiggleBonePresets)
+    bpy.utils.register_class(WB_MT_WiggleBonePresets)
+    bpy.utils.register_class(WB_OT_AddWiggleBonePreset)
     
 #    bpy.app.handlers.frame_change_pre.clear()
 #    bpy.app.handlers.frame_change_post.clear()
@@ -1351,6 +1487,13 @@ def unregister():
     bpy.utils.unregister_class(WIGGLE_PT_Utilities)
     bpy.utils.unregister_class(WIGGLE_PT_Bake)
     
+    bpy.utils.unregister_class(WB_OT_ResetToDefault)
+    
+    bpy.utils.unregister_class(WB_PT_WiggleBonePresets)
+    bpy.utils.unregister_class(WB_MT_WiggleBonePresets)
+    bpy.utils.unregister_class(WB_OT_AddWiggleBonePreset)
+    
+
     bpy.app.handlers.frame_change_pre.remove(wiggle_pre)
     bpy.app.handlers.frame_change_post.remove(wiggle_post)
     bpy.app.handlers.render_pre.remove(wiggle_render_pre)
